@@ -1,0 +1,250 @@
+#!/bin/bash
+
+# kf2-srv is a command line tool for managing a set of Killing Floor 2 servers.
+# Copyright (C) 2019-2021 GenZmeY
+# mailto: genzmey@gmail.com
+# 
+# This file is part of kf2-srv.
+#
+# kf2-srv is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+readonly ScriptFullname=$(readlink -e "$0")
+readonly ScriptName=$(basename $0)
+readonly ScriptVersion=$(rpm -q --queryformat '%{VERSION}' "$ScriptName")
+
+readonly GrpDir="/usr/share/kf2-srv/cmdgrp"
+readonly LibDir="/usr/share/kf2-srv/lib"
+readonly PatchDir="/usr/share/kf2-srv/patch"
+
+readonly InstallDir="/usr/games/kf2-srv${KF2POSTFIX}"
+readonly AppBin="$InstallDir/Binaries/Win64/KFGameSteamServer.bin.x86_64"
+readonly AppBinOrig="${AppBin}.orig"
+
+readonly DefaultConfigDir="$InstallDir/KFGame/Config"
+readonly DefaultDownloadDir="$InstallDir/Binaries/Win64/steamapps/workshop"
+readonly DefaultCacheDir="$InstallDir/KFGame/Cache"
+readonly DefaultLogDir="$InstallDir/KFGame/Logs"
+
+readonly DownloadDir="/var/cache/kf2-srv/workshop"
+readonly CacheDir="/var/cache/kf2-srv/cache"
+readonly LogDir="/var/log/kf2-srv${KF2POSTFIX}"
+
+readonly InstanceConfigDir="/etc/kf2-srv/instances${KF2POSTFIX}"
+readonly InstanceConfigTemplate="/etc/kf2-srv/instance.conf.template"
+
+readonly AppServerNum="232130"
+readonly AppClientNum="232090"
+readonly SteamConstB='17825793'
+readonly ServerBotLogin="srvbot"
+
+declare -a DiffNames
+declare -a WaveNames
+declare -A ModeNames
+declare -A MutNames
+
+function include () # $1: Lib
+{
+	if ! echo "$INC_LIBS" | grep -Foq "$1"; then
+		source "$1"
+		export INC_LIBS="$INC_LIBS:$1"
+	fi
+}
+
+function run_as_steamuser () # $@: command
+{
+	include "/etc/steamcmd/steamcmd.conf"
+	
+	if [[ "$(whoami)" == "$SteamUser" ]]; then
+		shift 3; cmd_main "$@"
+	elif [[ -n $(groups "$(whoami)" | grep -Fo 'wheel') ]] || [[ "$(whoami)" == "root" ]]; then
+		export INC_LIBS=""
+		sudo -iu "$SteamUser" "$@"
+	else
+		echo "You must be a $SteamUser, root or sudo-user to run this command."
+	fi
+}
+
+function run_as_root () # $@: command
+{
+	if [[ "$(whoami)" == "root" ]]; then
+		shift 3; cmd_main "$@"
+	elif [[ -n $(groups "$(whoami)" | grep -Fo 'wheel') ]]; then
+		export INC_LIBS=""
+		sudo -i "$@"
+	else
+		echo "You must be root or sudo-user to run this command."
+	fi
+}
+
+function is_help () # $1: Arg
+{
+	echo "$1" | grep -Piqo '^(-h|--help|help)$'
+}
+
+function is_usage () # $1: Arg
+{
+	echo "$1" | grep -Piqo '^usage$'
+}
+
+function is_version () # $1: Arg
+{
+	echo "$1" | grep -Piqo '^(-v|--version|version)$'
+}
+
+function server_exists ()
+{
+	test -x "$AppBin"
+}
+
+function function_exists () # $1: function name
+{
+	type "$1" &> /dev/null
+}
+
+function indent () # $1: Level
+{
+	local Tab='  '
+	for ((i=0; i<$1; i++))
+	do
+		echo -n "$Tab"
+	done
+}
+
+function groups_list ()
+{
+	find "$GrpDir"       \
+		-mindepth 1      \
+		-maxdepth 1      \
+		-type d          \
+		-printf "%f\n" | \
+	sort
+}
+
+function commands_list () # $1: Command group
+{
+	find "$GrpDir/$1"    \
+		-mindepth 1      \
+		-maxdepth 1      \
+		-type f          \
+		-printf "%f\n" | \
+	sort
+}
+
+function group_info () # $1: Command group
+{
+	local Command
+	for Command in $(commands_list $1)
+	do
+		local CommandPathName="$GrpDir/$1/$Command"
+		(	# subshell
+			source "$CommandPathName"
+			if function_exists "cmd_usage"; then
+				echo "$(indent 1)${ScriptName}${KF2POSTFIX} $1 $Command $(cmd_usage)"
+			else
+				echo "$(indent 1)${ScriptName}${KF2POSTFIX} $1 $Command"
+			fi
+			if function_exists "cmd_info"; then
+				cmd_info | sed -r "s|^|$(indent 2)|g"
+			else
+				echo "$(indent 2)No information"
+			fi
+		)
+	done
+}
+
+function full_info ()
+{
+	echo "${ScriptName}${KF2POSTFIX} v${ScriptVersion}"
+	echo "Command line tool for managing a set of Killing Floor 2 servers."
+	echo ""
+	echo "Usage: ${ScriptName}${KF2POSTFIX} <group> <command> [<args>]"
+	echo ""
+	for Group in $(groups_list)
+	do
+		group_info "$Group"
+		echo ""
+	done
+	echo "Use --help as an argument for information on a specific group or command"
+}
+
+Group="$1"
+Command="$2"
+
+GroupPathname="$GrpDir/$Group"
+CommandPathName="$GroupPathname/$Command"
+
+if [[ $# -eq 0 ]] || is_help "$1"; then
+	full_info
+	exit 0
+elif is_version "$1"; then
+	echo "${ScriptName}${KF2POSTFIX} v${ScriptVersion}"
+	exit 0
+elif [[ -d "$GroupPathname" ]]; then
+	shift
+	if [[ $# -eq 0 ]] || is_help "$1"; then
+		group_info "$Group"
+		exit 0
+	elif [[ -r "$CommandPathName" ]]; then
+		shift
+		source "$CommandPathName"
+		if is_help "$1"; then
+			if ! function_exists "cmd_usage" \
+			&& ! function_exists "cmd_info"  \
+			&& ! function_exists "cmd_help"; then
+				echo "No help page for this command."
+			else
+				if function_exists "cmd_usage"; then
+					echo "usage: $(cmd_usage)"
+					echo
+				fi
+				if function_exists "cmd_info"; then
+					cmd_info
+					echo
+				fi
+				if function_exists "cmd_help"; then
+					cmd_help
+				fi
+			fi
+		elif is_usage "$1"; then
+			if function_exists "cmd_usage"; then
+				cmd_usage
+			else
+				echo "No usage information for this command."
+			fi
+		else
+			if function_exists "cmd_main"; then
+				if function_exists "cmd_need_installed_server" && cmd_need_installed_server && ! server_exists; then
+					echo "You must install server first"
+					echo "Run \"${ScriptName}${KF2POSTFIX} game update\" to install it"
+					exit 1
+				elif function_exists "cmd_need_superuser" && cmd_need_superuser; then
+					run_as_root "${ScriptFullname}${KF2POSTFIX}" "$Group" "$Command" "$@"
+				elif function_exists "cmd_need_steamuser" && cmd_need_steamuser; then
+					run_as_steamuser "${ScriptFullname}${KF2POSTFIX}" "$Group" "$Command" "$@"
+				else
+					cmd_main "$@"
+				fi
+			else
+				echo "No implementation for the command $Command"
+			fi
+		fi
+	else
+		echo "Command not found: $Command"
+		exit 1
+	fi
+else
+	echo "Command group not found: $Group"
+	exit 1
+fi
+

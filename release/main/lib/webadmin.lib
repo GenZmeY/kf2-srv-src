@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# kf2-srv is a command line tool for managing a set of Killing Floor 2 servers.
+# Copyright (C) 2019-2021 GenZmeY
+# mailto: genzmey@gmail.com
+# 
+# This file is part of kf2-srv.
+#
+# kf2-srv is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+function admin_curl () # $1: Instance, $2: URL, $*: Request
+{	
+	include /etc/kf2-srv/bot.conf
+	
+	local Instance="$1"
+	local URL="$2"
+	local InstanceConf="$InstanceConfigDir/$Instance/instance.conf"
+	local WebPort=$(multini --get "$InstanceConf" '' "PortWeb")
+	shift; shift
+	curl -s -o "/dev/null" -u "$ServerBotLogin:$ServerBotPassword" "localhost:$WebPort/$URL" $*
+}
+
