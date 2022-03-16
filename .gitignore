@@ -1,5 +1,1 @@
-RPMS/*
-SRPMS/*
-BUILD/*
-BUILDROOT/*
-SOURCES/*.tar.gz
+release
