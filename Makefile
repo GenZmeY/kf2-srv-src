@@ -20,7 +20,7 @@
 NAME            := kf2-srv
 
 SOURCEDIR       := .
-RELEASEDIR      := $(SOURCEDIR)/release
+BUILDDIR        := $(SOURCEDIR)/build
 DESTDIR          =
 PREFIX           = /usr/local
 
@@ -60,28 +60,31 @@ SHELLCHECK      := shellcheck -x
 SYSTEMDCHECK    := systemd-analyze verify
 XMLCHECK        := xmllint --noout
 
-.PHONY: all build build-finalize build-finalize-test filesystem install uninstall test-xml test-bash test-shellcheck test-systemd test clean
+.PHONY: all build-common build build-test check-build filesystem install uninstall test-xml test-bash test-shellcheck test-systemd test clean
 
-all: install
+all: build
 
-build:
-	mkdir $(RELEASEDIR)
+build-common:
+	mkdir $(BUILDDIR)
 	
-	cp -r $(SOURCE_MAIN)            $(RELEASEDIR)
-	cp -r $(SOURCE_CONFIG)          $(RELEASEDIR)
-	cp -r $(SOURCE_BASHCOMP)        $(RELEASEDIR)
-	cp -r $(SOURCE_FIREWALLD)       $(RELEASEDIR)
-	cp -r $(SOURCE_LOGROTATE)       $(RELEASEDIR)
-	cp -r $(SOURCE_RSYSLOG)         $(RELEASEDIR)
-	cp -r $(SOURCE_SYSTEMD)         $(RELEASEDIR)
+	cp -r $(SOURCE_MAIN)            $(BUILDDIR)
+	cp -r $(SOURCE_CONFIG)          $(BUILDDIR)
+	cp -r $(SOURCE_BASHCOMP)        $(BUILDDIR)
+	cp -r $(SOURCE_FIREWALLD)       $(BUILDDIR)
+	cp -r $(SOURCE_LOGROTATE)       $(BUILDDIR)
+	cp -r $(SOURCE_RSYSLOG)         $(BUILDDIR)
+	cp -r $(SOURCE_SYSTEMD)         $(BUILDDIR)
 	
-build-finalize:
-	find $(RELEASEDIR) -type f -exec sed -i 's|:DEFINE_PREFIX:|$(PREFIX)|g;' {} \;
+build: build-common
+	find $(BUILDDIR) -type f -exec sed -i 's|:DEFINE_PREFIX:|$(PREFIX)|g;' {} \;
 
-build-finalize-test:
-	find $(SOURCE_SYSTEMD)       -type f -name '*.service' -exec cp -f {} $(RELEASEDIR)/{} \;
-	find $(RELEASEDIR)           -type f -exec sed -i  's|:DEFINE_PREFIX:|$(DESTDIR)$(PREFIX)|g;' {} \;
-	find $(RELEASEDIR)           -type f -exec sed -i -r 's|ExecStart=.+KFGameSteamServer.bin.x86_64.*|ExecStart=/bin/bash|g;' {} \;
+build-test: build-common
+	find $(SOURCE_SYSTEMD)     -type f -name '*.service' -exec cp -f {} $(BUILDDIR)/{} \;
+	find $(BUILDDIR)           -type f -exec sed -i  's|:DEFINE_PREFIX:|$(DESTDIR)$(PREFIX)|g;' {} \;
+	find $(BUILDDIR)           -type f -exec sed -i -r 's|ExecStart=.+KFGameSteamServer.bin.x86_64.*|ExecStart=/bin/bash|g;' {} \;
+
+check-build:
+	test -d $(BUILDDIR)
 
 filesystem:
 	test -d '$(CONFDIR)'        || install -m 775 -d '$(CONFDIR)'
@@ -104,40 +107,40 @@ filesystem:
 	test -d '$(SCRIPTPATCHDIR)' || install -m 755 -d '$(SCRIPTPATCHDIR)'
 	test -d '$(BASHCOMPDIR)'    || install -m 755 -d '$(BASHCOMPDIR)'
 
-install: clean filesystem build build-finalize
-	install -m 755 $(RELEASEDIR)/main/$(NAME)                             $(BINDIR)
-	install -m 755 $(RELEASEDIR)/main/$(NAME)-beta                        $(BINDIR)
+install: check-build filesystem
+	install -m 755 $(BUILDDIR)/main/$(NAME)                             $(BINDIR)
+	install -m 755 $(BUILDDIR)/main/$(NAME)-beta                        $(BINDIR)
 	
 	# ugly, but works
-	find $(RELEASEDIR)/main/cmdgrp                    \
+	find $(BUILDDIR)/main/cmdgrp                      \
 		-mindepth 1                                   \
 		-maxdepth 1                                   \
 		-type d                                       \
 		-printf "%f\n" |                              \
 	while read CmdGrp;                                \
 	do                                                \
-		pushd   $(RELEASEDIR)/main/cmdgrp/$$CmdGrp;   \
+		pushd   $(BUILDDIR)/main/cmdgrp/$$CmdGrp;     \
 		install -m 755 -d $(SCRIPTGRPDIR)/$$CmdGrp;   \
 		install -m 644  * $(SCRIPTGRPDIR)/$$CmdGrp;   \
 		popd;                                         \
 	done
 	
-	install -m 644 $(RELEASEDIR)/main/lib/*                               $(SCRIPTLIBDIR)
+	install -m 644 $(BUILDDIR)/main/lib/*                               $(SCRIPTLIBDIR)
 	
-	install -m 644 $(RELEASEDIR)/systemd/*.service                        $(UNITDIR)
-	install -m 644 $(RELEASEDIR)/systemd/*.timer                          $(UNITDIR)
+	install -m 644 $(BUILDDIR)/systemd/*.service                        $(UNITDIR)
+	install -m 644 $(BUILDDIR)/systemd/*.timer                          $(UNITDIR)
 	
-	install -m 644 $(RELEASEDIR)/firewalld/$(NAME).xml                    $(FIREWALLDDIR)
-	install -m 644 $(RELEASEDIR)/logrotate/$(NAME)                        $(LOGROTATEDIR)
-	install -m 644 $(RELEASEDIR)/rsyslog/$(NAME).conf                     $(RSYSLOGDIR)
+	install -m 644 $(BUILDDIR)/firewalld/$(NAME).xml                    $(FIREWALLDDIR)
+	install -m 644 $(BUILDDIR)/logrotate/$(NAME)                        $(LOGROTATEDIR)
+	install -m 644 $(BUILDDIR)/rsyslog/$(NAME).conf                     $(RSYSLOGDIR)
 	
-	install -m 640 $(RELEASEDIR)/config/bot.conf                          $(CONFDIR)
-	install -m 644 $(RELEASEDIR)/config/instance.conf.template            $(CONFDIR)
-	install -m 644 $(RELEASEDIR)/config/$(NAME).conf                      $(CONFDIR)
+	install -m 640 $(BUILDDIR)/config/bot.conf                          $(CONFDIR)
+	install -m 644 $(BUILDDIR)/config/instance.conf.template            $(CONFDIR)
+	install -m 644 $(BUILDDIR)/config/$(NAME).conf                      $(CONFDIR)
 	
-	install -m 644 $(SOURCEDIR)/LICENSE                                   $(LICENSEDIR)/COPYING
+	install -m 644 $(SOURCEDIR)/LICENSE                                 $(LICENSEDIR)/COPYING
 	
-	install -m 644 $(RELEASEDIR)/bash_completion/$(NAME)                  $(BASHCOMPDIR)
+	install -m 644 $(BUILDDIR)/bash_completion/$(NAME)                  $(BASHCOMPDIR)
 
 uninstall:
 	rm -f  $(BINDIR)/$(NAME)
@@ -162,26 +165,26 @@ uninstall:
 	rm -rf $(CACHEDIR)
 
 test-xml:
-	$(XMLCHECK)        $(RELEASEDIR)/firewalld/$(NAME).xml
+	$(XMLCHECK)        $(BUILDDIR)/firewalld/$(NAME).xml
 
 test-bash:
-	cd $(RELEASEDIR) && grep -rlF '#!/bin/bash' . | xargs -I {} $(BASHCHECK) {}
+	cd $(BUILDDIR) && grep -rlF '#!/bin/bash' . | xargs -I {} $(BASHCHECK) {}
 
 test-shellcheck:
-	cd $(RELEASEDIR) && grep -rlF '#!/bin/bash' . | xargs -I {} $(SHELLCHECK) {}
+	cd $(BUILDDIR) && grep -rlF '#!/bin/bash' . | xargs -I {} $(SHELLCHECK) {}
 
 test-systemd:
-	$(SYSTEMDCHECK)    $(RELEASEDIR)/systemd/$(NAME)@.service
-	$(SYSTEMDCHECK)    $(RELEASEDIR)/systemd/$(NAME)-orig@.service
-	$(SYSTEMDCHECK)    $(RELEASEDIR)/systemd/$(NAME)-beta@.service
-	$(SYSTEMDCHECK)    $(RELEASEDIR)/systemd/$(NAME)-beta-orig@.service
-	$(SYSTEMDCHECK)    $(RELEASEDIR)/systemd/$(NAME)-beta-update.service
-	$(SYSTEMDCHECK)    $(RELEASEDIR)/systemd/$(NAME)-beta-update.timer
-	$(SYSTEMDCHECK)    $(RELEASEDIR)/systemd/$(NAME)-update.service
-	$(SYSTEMDCHECK)    $(RELEASEDIR)/systemd/$(NAME)-update.timer
+	$(SYSTEMDCHECK)    $(BUILDDIR)/systemd/$(NAME)@.service
+	$(SYSTEMDCHECK)    $(BUILDDIR)/systemd/$(NAME)-orig@.service
+	$(SYSTEMDCHECK)    $(BUILDDIR)/systemd/$(NAME)-beta@.service
+	$(SYSTEMDCHECK)    $(BUILDDIR)/systemd/$(NAME)-beta-orig@.service
+	$(SYSTEMDCHECK)    $(BUILDDIR)/systemd/$(NAME)-beta-update.service
+	$(SYSTEMDCHECK)    $(BUILDDIR)/systemd/$(NAME)-beta-update.timer
+	$(SYSTEMDCHECK)    $(BUILDDIR)/systemd/$(NAME)-update.service
+	$(SYSTEMDCHECK)    $(BUILDDIR)/systemd/$(NAME)-update.timer
 
-test: clean build build-finalize-test test-systemd test-xml test-bash test-shellcheck
+test: clean build-test test-systemd test-xml test-bash test-shellcheck
 
 clean:
-	rm -rf $(RELEASEDIR)
+	rm -rf $(BUILDDIR)
 
