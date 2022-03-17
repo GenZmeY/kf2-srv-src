@@ -81,7 +81,7 @@ build: build-common
 build-test: build-common
 	find $(SOURCE_SYSTEMD)     -type f -name '*.service' -exec cp -f {} $(BUILDDIR)/{} \;
 	find $(BUILDDIR)           -type f -exec sed -i  's|:DEFINE_PREFIX:|$(DESTDIR)$(PREFIX)|g;' {} \;
-	find $(BUILDDIR)           -type f -exec sed -i -r 's|ExecStart=.+KFGameSteamServer.bin.x86_64.*|ExecStart=/bin/bash|g;' {} \;
+	find $(BUILDDIR)           -type f -exec sed -i -r 's|ExecStart=.+(KFGameSteamServer.bin.x86_64\|kf2-srv(-beta)?).*|ExecStart=/bin/bash|g;' {} \;
 
 check-build:
 	test -d $(BUILDDIR)
